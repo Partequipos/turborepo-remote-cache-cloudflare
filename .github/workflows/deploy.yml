@@ -2,6 +2,7 @@ name: Deploy to Cloudflare Workers
 
 on:
   repository_dispatch:
+  workflow_dispatch:
   push:
     branches: ['master']
 
@@ -17,21 +18,32 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'pnpm'
 
+      # Sin TURBO_TOKEN el Worker quedaría publicado con un token vacío o
+      # adivinable: el upstream caía a la palabra 'SECRET'. Acá se aborta.
+      - name: Verificar secretos
+        env:
+          TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          for name in TURBO_TOKEN CF_TOKEN CF_ACCOUNT; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Falta el secreto $name en el repo. No se despliega."
+              exit 1
+            fi
+          done
+
       - run: pnpm install
       - run: pnpm build
 
       - name: Deploy
         uses: cloudflare/wrangler-action@v3
         env:
-          TURBO_TOKEN: ${{ secrets.TURBO_TOKEN || 'SECRET' }}
+          TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
         with:
-          accountId: ${{ secrets.CF_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
-          apiToken: ${{ secrets.CF_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           packageManager: 'pnpm'
-          preCommands: |
-            echo "*** post commands ***"
-            wrangler r2 bucket create turborepo-cache || true
-            echo "******"
           secrets: |
             TURBO_TOKEN
           command: deploy
